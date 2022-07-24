@@ -1,0 +1,59 @@
+- hosts: cluster
+
+  vars:
+    smb_user: "{{ smb_user }}"
+    smb_pass: "{{ smb_pass }}"
+
+  become: yes
+  tasks:
+  - name: create file share
+    file:
+     path: /mnt/fileshare
+     state: directory
+     mode: 0755
+
+  - name: Check if smb dir exists
+    stat:
+      path: /etc/smbcredentials
+    register: smb_folder
+  
+  - name: smb dir directory already existed
+    debug:
+      msg: "smb dir exists"
+    when: smb_folder.stat.exists
+
+  - name: create smb directory when not present
+    file:
+     path: /etc/smbcredentials
+     state: directory
+     mode: 0755
+    when: smb_folder.stat.exists == false
+
+  - name: check if smb_creds file exists
+    stat: 
+      path: /etc/smbcredentials/{{ smb_user }}.cred
+    register: smb_file
+
+  - name: create and populate smb_cred file if it doesnt exists
+    copy:
+      dest: /etc/smbcredentials/{{ smb_user }}.cred
+      content: |
+        username={{ smb_user }}
+        password={{ smb_pass }}
+      mode: 600
+    when: smb_file.stat.exists == False
+
+  - name: Add fstab entry
+    blockinfile:
+      path: /etc/fstab
+      state: present
+      block: |
+        //{{ smb_user }}.file.core.windows.net/fileshare /mnt/fileshare cifs nofail,credentials=/etc/smbcredentials/{{ smb_user }}.cred,dir_mode=0777,file_mode=0777,serverino,nosharesock,actimeo=30
+
+  - name: "mount share"
+    mount:
+      state: "mounted"
+      fstype: "cifs"
+      name: /mnt/fileshare
+      src: "//{{ smb_user }}.file.core.windows.net/fileshare"
+      opts: "credentials=/etc/smbcredentials/{{ smb_user }}.cred,dir_mode=0777,file_mode=0777,serverino,nosharesock,actimeo=30"
